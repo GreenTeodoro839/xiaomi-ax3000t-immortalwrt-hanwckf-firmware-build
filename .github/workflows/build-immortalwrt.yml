@@ -3,6 +3,11 @@ on:
   # schedule:
   #   - cron: "0 0 20 * *"
   workflow_dispatch:
+    inputs:
+      free_disk_space:
+        description: "运行 jlumbroso/free-disk-space 清理磁盘（怀疑其导致 runner 卡死时可关闭）"
+        type: boolean
+        default: true
 
 env:
   REPO_URL: https://github.com/hanwckf/immortalwrt-mt798x.git
@@ -25,6 +30,7 @@ jobs:
     
     steps:
     - name: Free disk space (Ubuntu)
+      if: inputs.free_disk_space
       uses: jlumbroso/free-disk-space@main
       with:
         # this might remove tools that are actually needed,
@@ -38,6 +44,9 @@ jobs:
         haskell: true
         large-packages: true
         swap-storage: false
+
+    - name: Report disk space
+      run: df -hT / /mnt || true
 
     - name: Checkout
       uses: actions/checkout@main
