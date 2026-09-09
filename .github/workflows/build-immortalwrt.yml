@@ -49,11 +49,14 @@ jobs:
         NEEDRESTART_SUSPEND: 1
       run: |
         sudo apt-get -qq update
-        sudo -E apt-get -qq install --no-install-recommends ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential \
+        # 依赖列表取自源码仓库 README（hanwckf/immortalwrt-mt798x）的 Method 1。
+        # 注意：README 里那句 `apt full-upgrade -y` 是给本地桌面写的，CI 上会连带
+        # 升级内核/libc6/firefox(snap)/chrome，正是之前卡死一小时的元凶，故不采用。
+        sudo -E apt-get -qq install ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential \
           bzip2 ccache clang clangd cmake cpio curl device-tree-compiler ecj fastjar flex gawk gettext gcc-multilib \
           g++-multilib git gperf haveged help2man intltool lib32gcc-s1 libc6-dev-i386 libelf-dev libglib2.0-dev \
-          libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libreadline-dev \
-          libssl-dev libtool lld lldb lrzsz mkisofs msmtp nano ninja-build p7zip p7zip-full patch pkgconf \
+          libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw5 libncursesw5-dev libreadline-dev \
+          libssl-dev libtool lld lldb lrzsz mkisofs msmtp nano ninja-build p7zip p7zip-full patch pkgconf python2.7 \
           python3 python3-pip python3-ply python3-docutils qemu-utils re2c rsync scons squashfs-tools subversion swig \
           texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev
         sudo -E apt-get -qq autoremove --purge
