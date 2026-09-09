@@ -5,6 +5,10 @@
 
 set -e
 
+# 本脚本被 workflow 以绝对路径调用（$GITHUB_WORKSPACE/before-update-custom.sh），
+# 而调用时 cwd 已经是 openwrt/，所以要找仓库里的文件得先定位脚本自身所在目录。
+SELF_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+
 # ---------------------------------------------------------------------------
 # 收紧 scripts/download.pl 里 curl 的超时参数
 #
@@ -51,6 +55,35 @@ https://sources.immortalwrt.org
 EOF
 echo "已写入 scripts/localmirrors："
 cat scripts/localmirrors
+
+
+# ---------------------------------------------------------------------------
+# 把本仓库自带的 mt_wifi 补丁塞进源码树
+#
+# 源码树自己有 patch 机制（package/mtk/drivers/mt_wifi/patches-7673/，选中
+# 7.6.7.3 驱动时 PATCH_DIR 就指向它），构建时会自动按序应用，所以只要把补丁
+# 文件拷进去即可，不需要手动打。
+#
+# 目前放了一个：022-dont-drop-assoc-on-bad-supp-channels-ie.patch
+# 修的是 7.6.7.3 会把 Supported Channels IE 超过 64 字节的关联请求静默丢弃，
+# 导致 Intel BE201 之类 Wi-Fi 7 网卡连不上 5G（2.4G 正常）。详见补丁内说明。
+#
+# 补丁应用失败时 OpenWrt 会直接中止构建，不会静默跳过，所以这里不额外做校验。
+# ---------------------------------------------------------------------------
+MTWIFI_PATCH_SRC="$SELF_DIR/patches/mt_wifi"
+MTWIFI_PATCH_DST="package/mtk/drivers/mt_wifi/patches-7673"
+
+if [ -d "$MTWIFI_PATCH_SRC" ]; then
+	if [ ! -d "$MTWIFI_PATCH_DST" ]; then
+		echo "ERROR: $MTWIFI_PATCH_DST 不存在，上游可能调整了目录结构或驱动版本选择。" >&2
+		echo "       请确认 package/mtk/drivers/mt_wifi/Makefile 里的 PATCH_DIR 后再改本脚本。" >&2
+		exit 1
+	fi
+	for p in "$MTWIFI_PATCH_SRC"/*.patch; do
+		[ -e "$p" ] || continue
+		cp -v "$p" "$MTWIFI_PATCH_DST/"
+	done
+fi
 
 
 # ---------------------------------------------------------------------------
