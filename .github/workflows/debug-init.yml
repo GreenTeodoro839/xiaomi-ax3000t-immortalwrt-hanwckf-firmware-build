@@ -1,0 +1,61 @@
+name: Debug Init Hang
+
+on:
+  workflow_dispatch:
+
+jobs:
+  debug:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Snapshot runner image
+        run: |
+          echo "=== image ==="
+          cat /imagegeneration/imagedata.json 2>/dev/null | head -20 || echo "(no imagedata)"
+          lsb_release -a 2>/dev/null
+          echo "=== needrestart / grub ==="
+          dpkg -l | grep -E 'needrestart|grub-pc' || echo "(neither installed)"
+          echo "=== upgradable count ==="
+          sudo apt-get update -qq >/dev/null 2>&1
+          apt list --upgradable 2>/dev/null | wc -l
+          echo "=== stdin ==="
+          [ -t 0 ] && echo "stdin IS a tty" || echo "stdin is NOT a tty"
+
+      - name: Run immortalwrt init script under watchdog
+        run: |
+          # 看门狗：每 20 秒抓一次进程树、交互对话框、apt 锁、内存/磁盘
+          (
+            for i in $(seq 1 75); do
+              sleep 20
+              echo "########## WATCHDOG t=$((i*20))s ##########"
+              ps -eo pid,ppid,etimes,stat,wchan:22,cmd --sort=-etimes | head -22
+              echo "--- 交互前端 ---"
+              pgrep -a -f 'whiptail|dialog|needrestart|debconf|ucf|frontend' || echo "(none)"
+              echo "--- 持有 dpkg 锁的进程 ---"
+              sudo fuser -v /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock 2>&1 | head -8 || true
+              echo "--- mem/disk ---"
+              free -m | head -2
+              df -h / | tail -1
+            done
+          ) &
+          WD=$!
+
+          set +e
+          timeout -s KILL 1200 sudo bash -c 'bash <(curl -sL https://build-scripts.immortalwrt.eu.org/init_build_environment.sh)'
+          RC=$?
+          echo "########## SCRIPT EXIT RC=$RC ##########"
+          [ $RC -eq 137 ] && echo ">>> 脚本被超时强杀，确认卡死 <<<"
+
+          kill $WD 2>/dev/null || true
+          exit 0
+
+      - name: Post-mortem
+        if: always()
+        run: |
+          echo "=== dmesg (OOM?) ==="
+          sudo dmesg 2>/dev/null | grep -iE 'oom|killed process|out of memory' | tail -20 || echo "(no OOM)"
+          echo "=== 关键工具是否装上 ==="
+          for t in gcc-10 clang-18 go node yarn gh upx po2lmo padjffs2; do
+            printf '%-12s ' "$t"; command -v $t >/dev/null 2>&1 && echo OK || echo MISSING
+          done
