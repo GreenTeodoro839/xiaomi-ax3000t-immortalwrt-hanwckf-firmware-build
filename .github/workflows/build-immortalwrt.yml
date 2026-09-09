@@ -101,7 +101,23 @@ jobs:
       run: |
         cd openwrt
         make defconfig
-        make download -j8 V=11
+
+        # scripts/download.pl 里的 curl 只有 --connect-timeout（只管建连），
+        # 没有 --max-time 也没有限速保护：源服务器接受连接后不发数据，curl 会
+        # 永久挂起，make download 随之卡死（本仓库实测卡了 59 分钟）。
+        # 这里补上：低于 1KB/s 持续 120s 即放弃该文件，交给 --retry 重试。
+        sed -i 's/curl -f --connect-timeout 20 --retry 5/curl -f --connect-timeout 20 --speed-limit 1024 --speed-time 120 --max-time 1800 --retry 5/' scripts/download.pl
+        grep -n 'qw(curl' scripts/download.pl
+
+        # 外层再套一道 timeout + 重试：dl/ 里已下好的文件会保留，每轮都在推进
+        ok=0
+        for i in 1 2 3 4 5; do
+          echo "==== make download 第 $i 轮 ===="
+          if timeout 900 make download -j8; then ok=1; break; fi
+          echo "第 $i 轮超时或失败，重试"
+        done
+        [ "$ok" = 1 ] || { echo "make download 连续 5 轮未成功"; exit 1; }
+
         find dl -size -1024c -exec ls -l {} \;
         find dl -size -1024c -exec rm -f {} \;
 
