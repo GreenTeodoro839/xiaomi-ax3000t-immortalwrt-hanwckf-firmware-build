@@ -3,11 +3,6 @@ on:
   # schedule:
   #   - cron: "0 0 20 * *"
   workflow_dispatch:
-    inputs:
-      free_disk_space:
-        description: "运行 jlumbroso/free-disk-space 清理磁盘（怀疑其导致 runner 卡死时可关闭）"
-        type: boolean
-        default: true
 
 env:
   REPO_URL: https://github.com/hanwckf/immortalwrt-mt798x.git
@@ -22,32 +17,12 @@ jobs:
   build:
     name: build-firmware
     runs-on: ubuntu-22.04
-    timeout-minutes: 300
 
     permissions:
       contents: write
       actions: write
-    
+
     steps:
-    - name: Free disk space (Ubuntu)
-      if: inputs.free_disk_space
-      uses: jlumbroso/free-disk-space@main
-      with:
-        # this might remove tools that are actually needed,
-        # if set to "true" but frees about 6 GB
-        tool-cache: false
-        
-        # all of these default to true, but feel free to set to
-        # "false" if necessary for your workflow
-        android: true
-        dotnet: true
-        haskell: true
-        large-packages: true
-        swap-storage: false
-
-    - name: Report disk space
-      run: df -hT / /mnt || true
-
     - name: Checkout
       uses: actions/checkout@main
 
@@ -57,10 +32,10 @@ jobs:
         NEEDRESTART_MODE: a
         NEEDRESTART_SUSPEND: 1
       run: |
-        sudo apt-get -qq update
-        # 依赖列表取自源码仓库 README（hanwckf/immortalwrt-mt798x）的 Method 1。
+        sudo -E apt-get -qq update
+        # 依赖清单取自源码仓库 README（hanwckf/immortalwrt-mt798x）的 Method 1。
         # 注意 1：README 里那句 `apt full-upgrade -y` 是给本地桌面写的，CI 上会连带
-        #   升级内核/libc6/firefox(snap)/chrome，正是之前卡死一小时的元凶，故不采用。
+        #   升级内核 / libc6 / firefox(snap) / chrome，实测卡住近一小时，故不采用。
         # 注意 2：必须带 --no-install-recommends。asciidoc 的 recommends 链会拖进
         #   dblatex → texlive 整套排版系统：752 个包 vs 363 个包，编译 OpenWrt 用不到。
         sudo -E apt-get -qq install --no-install-recommends ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential \
@@ -111,24 +86,19 @@ jobs:
         cd openwrt
         make defconfig
 
-        # scripts/download.pl 里的 curl 只有 --connect-timeout（只管建连），
-        # 没有 --max-time 也没有限速保护：源服务器接受连接后不发数据，curl 会
-        # 永久挂起，make download 随之卡死（本仓库实测卡了 59 分钟）。
-        # 这里补上：低于 1KB/s 持续 120s 即放弃该文件，交给 --retry 重试。
-        sed -i 's/curl -f --connect-timeout 20 --retry 5/curl -f --connect-timeout 20 --speed-limit 1024 --speed-time 120 --max-time 1800 --retry 5/' scripts/download.pl
-        grep -n 'qw(curl' scripts/download.pl
-
-        # 外层再套一道 timeout + 重试：dl/ 里已下好的文件会保留，每轮都在推进
+        # download.pl 的 curl 超时补丁、以及镜像优先级，都在 before-update-custom.sh 里。
+        # 这里只做外层编排：单轮超时 + 重试。dl/ 里已下好的文件会保留，每轮都在推进。
         ok=0
         for i in 1 2 3 4 5; do
           echo "==== make download 第 $i 轮 ===="
-          if timeout 900 make download -j8; then ok=1; break; fi
-          echo "第 $i 轮超时或失败，重试"
+          if timeout -k 30 1200 make download -j8; then ok=1; break; fi
+          echo "---- 第 $i 轮超时或有包失败，清掉半截的临时文件后重试 ----"
+          rm -f dl/*.dl dl/*.hash
         done
         [ "$ok" = 1 ] || { echo "make download 连续 5 轮未成功"; exit 1; }
 
-        find dl -size -1024c -exec ls -l {} \;
-        find dl -size -1024c -exec rm -f {} \;
+        rm -f dl/*.dl dl/*.hash
+        find dl -size -1024c -print -exec rm -f {} \;
 
     - name: Compile the firmware
       id: compile
@@ -137,7 +107,7 @@ jobs:
         echo -e "$(nproc) thread compile"
         make -j$(nproc) || make -j1 V=s
         echo "status=success" >> $GITHUB_OUTPUT
-        
+
         # Need Modify https://docs.github.com/zh/actions/writing-workflows/choosing-what-your-workflow-does/workflow-commands-for-github-actions#multiline-strings
         # grep '^CONFIG_TARGET_DEVICE.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
         # [ -s DEVICE_NAME ] && echo "DEVICE_NAME=_$(cat DEVICE_NAME)" >> $GITHUB_ENV
