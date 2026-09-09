@@ -14,8 +14,7 @@ goto LabelOK，而 LabelOK 位于 SendAssocResponse 之后，于是关联请求�
 客户端枚举的频段区间数，Wi-Fi 7 / 6E 网卡普遍会超，因此影响面不限于这一张卡。
 
 即便对端的 IE 确实不合规，正确做法也是回一个带状态码的关联响应，
-而不是不吭声让对端干等。这里恢复 7.6.6.1 的宽容行为，并把日志级别
-提到 ERROR 以便定位。
+而不是不吭声让对端干等。这里恢复 7.6.6.1 的宽容行为。
 
 --- a/mt_wifi/embedded/fsm/ap_mgmt_assoc.c	2025-04-08 12:23:08.000000000 +0800
 +++ b/mt_wifi/embedded/fsm/ap_mgmt_assoc.c	2026-09-09 21:26:48.197511849 +0800
@@ -23,9 +22,7 @@ goto LabelOK，而 LabelOK 位于 SendAssocResponse 之后，于是关联请求�
  
  		case IE_SUPP_CHANNELS:
  			if (eid_ptr->Len > MAX_LEN_OF_SUPPORTED_CHL || (eid_ptr->Len % 2)) {
--				MTWF_DBG(pAd, DBG_CAT_AP, DBG_SUBCAT_ALL, DBG_LVL_INFO, "wrong IE_SUPP_CHANNELS, eid->Len = %d\n",
-+				MTWF_DBG(pAd, DBG_CAT_AP, DBG_SUBCAT_ALL, DBG_LVL_ERROR, "wrong IE_SUPP_CHANNELS, eid->Len = %d\n",
- 						 eid_ptr->Len);
+				MTWF_DBG(pAd, DBG_CAT_AP, DBG_SUBCAT_ALL, DBG_LVL_INFO, "wrong IE_SUPP_CHANNELS, eid->Len = %d\n",
 -				return FALSE;
  			} else if (eid_ptr->Len + ie_lists->SupportedChlLen <= MAX_LEN_OF_SUPPORTED_CHL) {
  				UINT32 _ChlIdx = ie_lists->SupportedChlLen %
