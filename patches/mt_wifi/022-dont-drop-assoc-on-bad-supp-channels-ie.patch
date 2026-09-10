@@ -7,22 +7,23 @@ goto LabelOK，而 LabelOK 位于 SendAssocResponse 之后，于是关联请求�
 
 该 IE 由 802.11h 的 Spectrum Management 位触发，而这个位只在 5GHz 置位
 （见 ap.c: ap_mlme_set_capability），所以症状表现为 2.4G 正常、5G 关联超时。
-实测 Intel BE201 在 5G 上就是卡在这里（auth 成功、assoc 超时）。打完本补丁后
-5G 立刻可连，且 AP 日志给出实际长度：
+实测 Intel BE201 在 5G 上就是卡在这里（auth 成功、assoc 超时），打完本补丁后
+5G 立刻可连。定位时曾临时把这条日志的级别从 DBG_LVL_INFO 提到 DBG_LVL_ERROR
+以便默认可见，读到实际长度：
   PeerAssocReqCmmSanity() 1439: wrong IE_SUPP_CHANNELS, eid->Len = 74
 74 > MAX_LEN_OF_SUPPORTED_CHL(64)，即长度上限分支被触发。该 IE 的长度取决于
 客户端枚举的频段区间数，Wi-Fi 7 / 6E 网卡普遍会超，因此影响面不限于这一张卡。
+本补丁不改日志级别，所以默认看不到这条；需要复现时自行把级别提到 ERROR。
 
 即便对端的 IE 确实不合规，正确做法也是回一个带状态码的关联响应，
 而不是不吭声让对端干等。这里恢复 7.6.6.1 的宽容行为。
 
---- a/mt_wifi/embedded/fsm/ap_mgmt_assoc.c	2025-04-08 12:23:08.000000000 +0800
-+++ b/mt_wifi/embedded/fsm/ap_mgmt_assoc.c	2026-09-09 21:26:48.197511849 +0800
-@@ -1435,9 +1435,8 @@
- 
- 		case IE_SUPP_CHANNELS:
+--- a/mt_wifi/embedded/fsm/ap_mgmt_assoc.c
++++ b/mt_wifi/embedded/fsm/ap_mgmt_assoc.c
+@@ -1437,7 +1437,6 @@
  			if (eid_ptr->Len > MAX_LEN_OF_SUPPORTED_CHL || (eid_ptr->Len % 2)) {
-				MTWF_DBG(pAd, DBG_CAT_AP, DBG_SUBCAT_ALL, DBG_LVL_INFO, "wrong IE_SUPP_CHANNELS, eid->Len = %d\n",
+ 				MTWF_DBG(pAd, DBG_CAT_AP, DBG_SUBCAT_ALL, DBG_LVL_INFO, "wrong IE_SUPP_CHANNELS, eid->Len = %d\n",
+ 						 eid_ptr->Len);
 -				return FALSE;
  			} else if (eid_ptr->Len + ie_lists->SupportedChlLen <= MAX_LEN_OF_SUPPORTED_CHL) {
  				UINT32 _ChlIdx = ie_lists->SupportedChlLen %
